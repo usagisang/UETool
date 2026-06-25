@@ -22,7 +22,7 @@ class UETComposeAttrs : IAttrs {
         nodeInfo.get("Path")?.let {
             items.add(TextItem("Path", it, true))
         }
-        items.add(TextItem("Bounds(px)", "${rect.left},${rect.top} - ${rect.right},${rect.bottom}"))
+        items.add(TextItem("Bounds(px)", rect.toShortString()))
         items.add(TextItem("Size(dp)", "${DimenUtil.px2dip(rect.width().toFloat(), true)} * ${DimenUtil.px2dip(rect.height().toFloat(), true)}"))
 
         nodeInfo.properties

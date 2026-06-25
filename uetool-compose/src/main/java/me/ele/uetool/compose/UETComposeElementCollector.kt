@@ -4,9 +4,11 @@ import android.graphics.Rect
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect as ComposeRect
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.platform.AbstractComposeView
-import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.semantics.AccessibilityAction
 import androidx.compose.ui.semantics.CollectionInfo
 import androidx.compose.ui.semantics.CollectionItemInfo
@@ -18,6 +20,8 @@ import androidx.compose.ui.semantics.SemanticsOwner
 import androidx.compose.ui.text.AnnotatedString
 import me.ele.uetool.base.Element
 import me.ele.uetool.base.ElementCollector
+import java.lang.reflect.Field
+import java.lang.reflect.Method
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -29,9 +33,61 @@ class UETComposeElementCollector : ElementCollector {
         }
 
         val ownerInfo = view.findOwnerInfo(MAX_OWNER_SEARCH_DEPTH) ?: return false
-        val rootNode = ownerInfo.owner.readRootNode() ?: return false
         val before = elements.size
-        collectNode(rootNode, ownerInfo.hostView, null, elements, HashSet(), 0, ROOT_PATH)
+        val rootNode = ownerInfo.owner.readRootNode()
+        val hostRootLayoutNode = ownerInfo.hostView.readRootLayoutNode()
+        val semanticsRootLayoutNode = if (hostRootLayoutNode == null) rootNode?.readLayoutNode() else null
+        val rootLayoutNode = hostRootLayoutNode ?: semanticsRootLayoutNode
+        val semanticsIndex = if (rootLayoutNode != null) {
+            rootNode?.buildSemanticsIndex() ?: SemanticsIndex.EMPTY
+        } else {
+            SemanticsIndex.EMPTY
+        }
+        val rootLayoutNodeSource = when {
+            hostRootLayoutNode != null -> "hostView.root"
+            semanticsRootLayoutNode != null -> "semanticsNode.layoutNode"
+            else -> "none"
+        }
+        DebugLog.d(TAG) {
+            "collect compose host=${ownerInfo.hostView.javaClass.name}, " +
+                "rootNode=${rootNode != null}, " +
+                "rootLayoutNode=${rootLayoutNode != null}, " +
+                "rootLayoutNodeSource=$rootLayoutNodeSource, " +
+                "rootLayoutNodeClass=${rootLayoutNode?.javaClass?.name}, " +
+                "semanticsLayoutMatches=${semanticsIndex.layoutNodeCount}, " +
+                "semanticsIdMatches=${semanticsIndex.semanticsNodeCount}"
+        }
+        if (rootLayoutNode != null) {
+            val windowOffset = ownerInfo.hostView.readWindowOffset()
+            val stats = LayoutCollectStats()
+            collectLayoutNode(
+                rootLayoutNode,
+                windowOffset,
+                null,
+                elements,
+                HashSet(),
+                0,
+                ROOT_PATH,
+                semanticsIndex,
+                stats
+            )
+            DebugLog.d(TAG) {
+                "layout collect finished visited=${stats.visitedCount}, " +
+                    "added=${stats.addedCount}, " +
+                    "boundsNull=${stats.boundsNullCount}, " +
+                    "boundsEmpty=${stats.boundsEmptyCount}, " +
+                    "skippedDuplicate=${stats.skippedDuplicateCount}, " +
+                    "totalElementsAdded=${elements.size - before}"
+            }
+            if (elements.size > before) {
+                return true
+            }
+        }
+
+        rootNode?.let {
+            collectSemanticsNode(it, ownerInfo.hostView, null, elements, HashSet(), 0, ROOT_PATH)
+            DebugLog.d(TAG) { "fallback semantics collect added=${elements.size - before}" }
+        }
         return elements.size > before
     }
 
@@ -58,6 +114,11 @@ class UETComposeElementCollector : ElementCollector {
             ?: readField("semanticsOwner") as? SemanticsOwner
     }
 
+    private fun View.readRootLayoutNode(): Any? {
+        return callNoArg("getRoot")
+            ?: readField("root")
+    }
+
     private fun SemanticsOwner.readRootNode(): SemanticsNode? {
         return callNoArg("getUnmergedRootSemanticsNode") as? SemanticsNode
             ?: callNoArg("getRootSemanticsNode") as? SemanticsNode
@@ -66,7 +127,63 @@ class UETComposeElementCollector : ElementCollector {
             ?: readField("rootSemanticsNode") as? SemanticsNode
     }
 
-    private fun collectNode(
+    private fun collectLayoutNode(
+        layoutNode: Any,
+        windowOffset: WindowOffset,
+        parent: Element?,
+        elements: MutableList<Element>,
+        seenNodes: MutableSet<Int>,
+        depth: Int,
+        parentPath: String,
+        semanticsIndex: SemanticsIndex,
+        stats: LayoutCollectStats
+    ) {
+        val layoutNodeId = System.identityHashCode(layoutNode)
+        if (!seenNodes.add(layoutNodeId)) {
+            stats.skippedDuplicateCount++
+            return
+        }
+        stats.visitedCount++
+
+        val children = layoutNode.readLayoutChildren()
+        val info = layoutNode.readLayoutNodeInfo(layoutNodeId, depth, children.size, semanticsIndex)
+        val currentPath = if (depth == 0) ROOT_PATH else "$parentPath/${info.pathSegment()}"
+        info.put("Path", currentPath)
+        info.put("LayoutPath", currentPath)
+
+        var currentParent = parent
+        val bounds = layoutNode.readLayoutBounds(windowOffset)
+        if (bounds == null) {
+            stats.boundsNullCount++
+            if (!stats.boundsNullSampleLogged) {
+                stats.boundsNullSampleLogged = true
+                layoutNode.logLayoutBoundsProbe(windowOffset)
+            }
+        } else if (bounds.width() <= 0 || bounds.height() <= 0) {
+            stats.boundsEmptyCount++
+        } else {
+            val element = ComposeElement(windowOffset.hostView, bounds, info, parent)
+            elements.add(element)
+            stats.addedCount++
+            currentParent = element
+        }
+
+        children.forEach { child ->
+            collectLayoutNode(
+                child,
+                windowOffset,
+                currentParent,
+                elements,
+                seenNodes,
+                depth + 1,
+                currentPath,
+                semanticsIndex,
+                stats
+            )
+        }
+    }
+
+    private fun collectSemanticsNode(
         node: SemanticsNode,
         hostView: View,
         parent: Element?,
@@ -81,7 +198,7 @@ class UETComposeElementCollector : ElementCollector {
         }
 
         val children = node.readChildren()
-        val info = node.readNodeInfo(depth, children.size)
+        val info = node.readSemanticsNodeInfo(depth, children.size)
         val currentPath = if (depth == 0) ROOT_PATH else "$parentPath/${info.pathSegment()}"
         info.put("Path", currentPath)
 
@@ -94,7 +211,7 @@ class UETComposeElementCollector : ElementCollector {
         }
 
         children.forEach { child ->
-            collectNode(child, hostView, currentParent, elements, seenIds, depth + 1, currentPath)
+            collectSemanticsNode(child, hostView, currentParent, elements, seenIds, depth + 1, currentPath)
         }
     }
 
@@ -119,64 +236,212 @@ class UETComposeElementCollector : ElementCollector {
         }
     }
 
-    private fun SemanticsNode.readNodeInfo(
+    private fun SemanticsNode.readSemanticsNodeInfo(
         depth: Int,
         childCount: Int
     ): ComposeNodeInfo {
         val info = ComposeNodeInfo(readId(), depth)
         val config = callNoArg("getConfig") as? SemanticsConfiguration
+            ?: callNoArg("getUnmergedConfig\$ui") as? SemanticsConfiguration
+            ?: callNoArg("getUnmergedConfig\$ui_release") as? SemanticsConfiguration
             ?: readField("config") as? SemanticsConfiguration
             ?: readField("unmergedConfig") as? SemanticsConfiguration
 
-        info.put("ChildCount", childCount)
+        info.put("NodeSource", "Semantics")
+        info.put("SemanticsChildCount", childCount)
         info.put("TouchBounds(root)", (callNoArg("getTouchBoundsInRoot") as? ComposeRect)?.toAndroidRect()?.toShortString())
 
         if (config != null) {
-            val semantics = config.readProperties()
-
-            semantics.putDetail(info, "Text")
-            semantics.putDetail(info, "ContentDescription")
-            semantics.putDetail(info, "TestTag")
-            semantics.putDetail(info, "Role")
-            semantics.putDetail(info, "StateDescription")
-            semantics.putDetail(info, "PaneTitle")
-            semantics.putDetail(info, "Error")
-            semantics.putDetail(info, "ProgressBar", "ProgressBarRangeInfo")
-            semantics.putDetail(info, "CollectionInfo")
-            semantics.putDetail(info, "CollectionItemInfo")
-            semantics.putDetail(info, "LiveRegion")
-            semantics.putDetail(info, "IsTraversalGroup")
-            semantics.putDetail(info, "TraversalIndex")
-            semantics.putDetail(info, "HorizontalScroll", "HorizontalScrollAxisRange")
-            semantics.putDetail(info, "VerticalScroll", "VerticalScrollAxisRange")
-            semantics.putDetail(info, "ContentType")
-            semantics.putDetail(info, "ContentDataType")
-            semantics.putDetail(info, "EditableText")
-            semantics.putDetail(info, "InputText")
-            semantics.putDetail(info, "TextSubstitution")
-            semantics.putDetail(info, "IsShowingTextSubstitution")
-            semantics.putDetail(info, "TextSelectionRange")
-            semantics.putDetail(info, "ImeAction")
-            semantics.putDetail(info, "Selected")
-            semantics.putDetail(info, "ToggleableState")
-            semantics.putDetail(info, "Focused")
-            semantics.putDetail(info, "IsEditable")
-            semantics.putDetail(info, "MaxTextLength")
-            semantics.putDetail(info, "TestTagsAsResourceId")
-            semantics.putFlag(info, "Heading")
-            semantics.putFlag(info, "SelectableGroup")
-            semantics.putFlag(info, "Disabled")
-            semantics.putFlag(info, "Password")
-            semantics.putFlag(info, "HideFromAccessibility")
-            semantics.putFlag(info, "IsPopup")
-            semantics.putFlag(info, "IsDialog")
-            info.put("MergeDescendants", config.isMergingSemanticsOfDescendants)
-            info.put("ClearingSemantics", config.isClearingSemantics)
-            info.putActions(semantics.readActions())
-            info.putOtherSemantics(semantics)
-            info.put("Semantics", config)
+            info.putSemanticsConfiguration(config)
         }
         return info
+    }
+
+    private fun Any.readLayoutNodeInfo(
+        nodeId: Int,
+        depth: Int,
+        childCount: Int,
+        semanticsIndex: SemanticsIndex
+    ): ComposeNodeInfo {
+        val info = ComposeNodeInfo(nodeId, depth)
+        val measurePolicy = callNoArg("getMeasurePolicy")
+        val semanticsConfig = callNoArg("getSemanticsConfiguration") as? SemanticsConfiguration
+        val semanticsId = callNoArg("getSemanticsId")
+
+        info.put("NodeSource", "LayoutNode")
+        info.put("LayoutNodeHash", nodeId)
+        info.put("LayoutNodeClass", toClassDetail())
+        info.put("LayoutChildCount", childCount)
+        info.put("LayoutWidth", callNoArg("getWidth"))
+        info.put("LayoutHeight", callNoArg("getHeight"))
+        info.put("SemanticsId", semanticsId)
+        info.put("CompositeKeyHash", callNoArg("getCompositeKeyHash"))
+        info.put("MeasurePolicy", measurePolicy?.toClassDetail())
+        info.put("LayoutType", measurePolicy?.toLayoutType())
+        (callNoArg("getInteropView") as? View)?.let { info.put("InteropView", it.javaClass.name) }
+        semanticsConfig?.let { info.putSemanticsConfiguration(it) }
+        semanticsIndex.find(nodeId, semanticsId)?.let { info.putMatchedSemantics(it) }
+        return info
+    }
+
+    private fun SemanticsNode.readLayoutNode(): Any? {
+        return callNoArg("getLayoutNode\$ui")
+            ?: callNoArg("getLayoutNode\$ui_release")
+            ?: callNoArg("getLayoutInfo")
+            ?: readField("layoutNode")
+    }
+
+    private fun SemanticsNode.buildSemanticsIndex(): SemanticsIndex {
+        val byLayoutNodeId = HashMap<Int, ComposeNodeInfo>()
+        val bySemanticsId = HashMap<Int, ComposeNodeInfo>()
+        collectSemanticsIndex(byLayoutNodeId, bySemanticsId, HashSet(), 0)
+        return SemanticsIndex(byLayoutNodeId, bySemanticsId)
+    }
+
+    private fun SemanticsNode.collectSemanticsIndex(
+        byLayoutNodeId: MutableMap<Int, ComposeNodeInfo>,
+        bySemanticsId: MutableMap<Int, ComposeNodeInfo>,
+        seenIds: MutableSet<Int>,
+        depth: Int
+    ) {
+        val nodeId = readId()
+        if (!seenIds.add(nodeId)) {
+            return
+        }
+
+        val children = readChildren()
+        val info = readSemanticsNodeInfo(depth, children.size)
+        bySemanticsId.putOrMergeSemantics(nodeId, info)
+        readLayoutNode()?.let { layoutNode ->
+            byLayoutNodeId.putOrMergeSemantics(System.identityHashCode(layoutNode), info)
+        }
+        children.forEach { child ->
+            child.collectSemanticsIndex(byLayoutNodeId, bySemanticsId, seenIds, depth + 1)
+        }
+    }
+
+    private fun Any.readLayoutChildren(): List<Any> {
+        return callNoArg("getChildren\$ui").toObjectList()
+            ?: callNoArg("getChildren\$ui_release").toObjectList()
+            ?: callNoArg("getFoldedChildren\$ui").toObjectList()
+            ?: callNoArg("getFoldedChildren\$ui_release").toObjectList()
+            ?: callNoArg("getChildren").toObjectList()
+            ?: readField("children").toObjectList()
+            ?: readField("foldedChildren").toObjectList()
+            ?: emptyList()
+    }
+
+    private fun Any.readLayoutBounds(windowOffset: WindowOffset): Rect? {
+        val coordinates = readLayoutCoordinates() ?: return null
+        val bounds = coordinates.readBoundsInWindow(logFailure = false) ?: return null
+        return bounds.toScreenRect(windowOffset)
+    }
+
+    private fun LayoutCoordinates.readBoundsInWindow(logFailure: Boolean): ComposeRect? {
+        val boundsInWindowResult = runCatching { boundsInWindow() }
+        if (boundsInWindowResult.isSuccess) {
+            return boundsInWindowResult.getOrNull()
+        }
+
+        val fallbackResult = runCatching {
+            val position = localToWindow(Offset.Zero)
+            ComposeRect(
+                position.x,
+                position.y,
+                position.x + size.width,
+                position.y + size.height
+            )
+        }
+        if (fallbackResult.isSuccess) {
+            return fallbackResult.getOrNull()
+        }
+
+        if (logFailure) {
+            val boundsInWindowError = boundsInWindowResult.exceptionOrNull()?.debugMessage()
+            val localToWindowError = fallbackResult.exceptionOrNull()?.debugMessage()
+            val isAttachedValue = runCatching { isAttached }.getOrNull()
+            val sizeText = runCatching { "${size.width}x${size.height}" }.getOrNull()
+            DebugLog.d(TAG) {
+                "layout bounds failed coordinateClass=${javaClass.name}, " +
+                    "boundsInWindowError=$boundsInWindowError, " +
+                    "localToWindowError=$localToWindowError, " +
+                    "isAttached=$isAttachedValue, " +
+                    "size=$sizeText"
+            }
+        }
+        return null
+    }
+
+    private fun Any.readLayoutCoordinates(): LayoutCoordinates? {
+        return callNoArg("getCoordinates") as? LayoutCoordinates
+            ?: callNoArg("getCoordinates\$ui") as? LayoutCoordinates
+            ?: callNoArg("getCoordinates\$ui_release") as? LayoutCoordinates
+            ?: callNoArg("getOuterCoordinator\$ui") as? LayoutCoordinates
+            ?: callNoArg("getOuterCoordinator\$ui_release") as? LayoutCoordinates
+            ?: callNoArg("getOuterCoordinator") as? LayoutCoordinates
+            ?: callNoArg("getInnerCoordinator\$ui") as? LayoutCoordinates
+            ?: callNoArg("getInnerCoordinator\$ui_release") as? LayoutCoordinates
+            ?: callNoArg("getInnerCoordinator") as? LayoutCoordinates
+            ?: readField("coordinates") as? LayoutCoordinates
+            ?: readField("outerCoordinator") as? LayoutCoordinates
+            ?: readField("innerCoordinator") as? LayoutCoordinates
+            ?: readField("coordinator") as? LayoutCoordinates
+            ?: readLayoutDelegate()?.readLayoutCoordinatesFromDelegate()
+    }
+
+    private fun Any.readLayoutDelegate(): Any? {
+        return callNoArg("getLayoutDelegate\$ui") ?: callNoArg("getLayoutDelegate\$ui_release")
+            ?: callNoArg("getLayoutDelegate")
+            ?: readField("layoutDelegate")
+    }
+
+    private fun Any.readLayoutCoordinatesFromDelegate(): LayoutCoordinates? {
+        return callNoArg("getCoordinates") as? LayoutCoordinates
+            ?: callNoArg("getCoordinates\$ui") as? LayoutCoordinates
+            ?: callNoArg("getCoordinates\$ui_release") as? LayoutCoordinates
+            ?: callNoArg("getOuterCoordinator\$ui") as? LayoutCoordinates
+            ?: callNoArg("getOuterCoordinator\$ui_release") as? LayoutCoordinates
+            ?: callNoArg("getOuterCoordinator") as? LayoutCoordinates
+            ?: callNoArg("getInnerCoordinator\$ui") as? LayoutCoordinates
+            ?: callNoArg("getInnerCoordinator\$ui_release") as? LayoutCoordinates
+            ?: callNoArg("getInnerCoordinator") as? LayoutCoordinates
+            ?: readField("coordinates") as? LayoutCoordinates
+            ?: readField("outerCoordinator") as? LayoutCoordinates
+            ?: readField("innerCoordinator") as? LayoutCoordinates
+            ?: readField("coordinator") as? LayoutCoordinates
+            ?: readField("measurePassDelegate").readNestedLayoutCoordinates()
+            ?: readField("lookaheadPassDelegate").readNestedLayoutCoordinates()
+    }
+
+    private fun Any?.readNestedLayoutCoordinates(): LayoutCoordinates? {
+        val target = this ?: return null
+        return target as? LayoutCoordinates
+            ?: target.callNoArg("getCoordinates") as? LayoutCoordinates
+            ?: target.callNoArg("getCoordinates\$ui") as? LayoutCoordinates
+            ?: target.callNoArg("getCoordinates\$ui_release") as? LayoutCoordinates
+            ?: target.readField("coordinates") as? LayoutCoordinates
+            ?: target.readField("outerCoordinator") as? LayoutCoordinates
+            ?: target.readField("innerCoordinator") as? LayoutCoordinates
+            ?: target.readField("coordinator") as? LayoutCoordinates
+    }
+
+    private fun Any.logLayoutBoundsProbe(windowOffset: WindowOffset) {
+        val coordinates = readLayoutCoordinates()
+        if (coordinates == null) {
+            DebugLog.d(TAG) { "layout bounds failed nodeClass=${javaClass.name}, coordinates=null" }
+            return
+        }
+
+        val bounds = coordinates.readBoundsInWindow(logFailure = true)
+        DebugLog.d(TAG) {
+            "layout bounds probe nodeClass=${javaClass.name}, " +
+                "coordinateClass=${coordinates.javaClass.name}, " +
+                "bounds=${bounds?.toScreenRect(windowOffset)?.toShortString()}"
+        }
+    }
+
+    private fun Throwable.debugMessage(): String {
+        return "${javaClass.simpleName}:${message ?: cause?.message.orEmpty()}"
     }
 
     private fun SemanticsNode.readChildren(): List<SemanticsNode> {
@@ -184,6 +449,8 @@ class UETComposeElementCollector : ElementCollector {
             ?: (callByName("getChildren", false) as? List<*>)?.filterIsInstance<SemanticsNode>()
             ?: (callByName("getChildren", false, true) as? List<*>)?.filterIsInstance<SemanticsNode>()
             ?: (callByName("getChildren", false, true, false) as? List<*>)?.filterIsInstance<SemanticsNode>()
+            ?: (callNoArg("getReplacedChildren\$ui") as? List<*>)?.filterIsInstance<SemanticsNode>()
+            ?: (callNoArg("getReplacedChildren\$ui_release") as? List<*>)?.filterIsInstance<SemanticsNode>()
             ?: (callNoArg("getReplacedChildren") as? List<*>)?.filterIsInstance<SemanticsNode>()
             ?: (callByName("getReplacedChildren", false) as? List<*>)?.filterIsInstance<SemanticsNode>()
             ?: (readField("children") as? List<*>)?.filterIsInstance<SemanticsNode>()
@@ -198,6 +465,12 @@ class UETComposeElementCollector : ElementCollector {
 
     private fun ComposeRect.toAndroidRect(): Rect {
         return Rect(left.roundToInt(), top.roundToInt(), right.roundToInt(), bottom.roundToInt())
+    }
+
+    private fun ComposeRect.toScreenRect(windowOffset: WindowOffset): Rect {
+        return toAndroidRect().also { rect ->
+            rect.offset(windowOffset.x, windowOffset.y)
+        }
     }
 
     private fun AnnotatedString.toPlainText(): String {
@@ -232,6 +505,77 @@ class UETComposeElementCollector : ElementCollector {
             properties[entry.key.name] = entry.value
         }
         return properties
+    }
+
+    private fun ComposeNodeInfo.putSemanticsConfiguration(config: SemanticsConfiguration) {
+        val semantics = config.readProperties()
+        if (semantics.isEmpty() && !config.isMergingSemanticsOfDescendants && !config.isClearingSemantics) {
+            return
+        }
+
+        semantics.putDetail(this, "Text")
+        semantics.putDetail(this, "ContentDescription")
+        semantics.putDetail(this, "TestTag")
+        semantics.putDetail(this, "Role")
+        semantics.putDetail(this, "StateDescription")
+        semantics.putDetail(this, "PaneTitle")
+        semantics.putDetail(this, "Error")
+        semantics.putDetail(this, "ProgressBar", "ProgressBarRangeInfo")
+        semantics.putDetail(this, "CollectionInfo")
+        semantics.putDetail(this, "CollectionItemInfo")
+        semantics.putDetail(this, "LiveRegion")
+        semantics.putDetail(this, "IsTraversalGroup")
+        semantics.putDetail(this, "TraversalIndex")
+        semantics.putDetail(this, "HorizontalScroll", "HorizontalScrollAxisRange")
+        semantics.putDetail(this, "VerticalScroll", "VerticalScrollAxisRange")
+        semantics.putDetail(this, "ContentType")
+        semantics.putDetail(this, "ContentDataType")
+        semantics.putDetail(this, "EditableText")
+        semantics.putDetail(this, "InputText")
+        semantics.putDetail(this, "TextSubstitution")
+        semantics.putDetail(this, "IsShowingTextSubstitution")
+        semantics.putDetail(this, "TextSelectionRange")
+        semantics.putDetail(this, "ImeAction")
+        semantics.putDetail(this, "Selected")
+        semantics.putDetail(this, "ToggleableState")
+        semantics.putDetail(this, "Focused")
+        semantics.putDetail(this, "IsEditable")
+        semantics.putDetail(this, "MaxTextLength")
+        semantics.putDetail(this, "TestTagsAsResourceId")
+        semantics.putFlag(this, "Heading")
+        semantics.putFlag(this, "SelectableGroup")
+        semantics.putFlag(this, "Disabled")
+        semantics.putFlag(this, "Password")
+        semantics.putFlag(this, "HideFromAccessibility")
+        semantics.putFlag(this, "IsPopup")
+        semantics.putFlag(this, "IsDialog")
+        put("MergeDescendants", config.isMergingSemanticsOfDescendants)
+        put("ClearingSemantics", config.isClearingSemantics)
+        put("SemanticsPropertyCount", semantics.size)
+        putActions(semantics.readActions())
+        putOtherSemantics(semantics)
+    }
+
+    private fun ComposeNodeInfo.putMatchedSemantics(matchedSemantics: ComposeNodeInfo) {
+        put("MatchedSemanticsId", matchedSemantics.id)
+        put("MatchedSemanticsDepth", matchedSemantics.depth)
+        matchedSemantics.properties
+            .filterKeys { it !in SEMANTICS_MATCH_IGNORED_PROPERTY_NAMES }
+            .forEach { (name, detail) -> properties[name] = detail }
+    }
+
+    private fun MutableMap<Int, ComposeNodeInfo>.putOrMergeSemantics(
+        key: Int,
+        info: ComposeNodeInfo
+    ) {
+        val existing = this[key]
+        if (existing == null) {
+            this[key] = info
+            return
+        }
+        info.properties
+            .filterKeys { it !in SEMANTICS_MATCH_IGNORED_PROPERTY_NAMES }
+            .forEach { (name, detail) -> existing.properties[name] = detail }
     }
 
     private fun Map<String, Any?>.putDetail(
@@ -313,19 +657,71 @@ class UETComposeElementCollector : ElementCollector {
             .forEach { (name, detail) -> detail?.let { put(name, it.toSemanticsDetail()) } }
     }
 
+    private fun Any.toClassDetail(): String {
+        val simpleName = javaClass.simpleName.takeIf { it.isNotBlank() }
+        return simpleName ?: javaClass.name
+    }
+
+    private fun Any.toLayoutType(): String? {
+        val className = javaClass.name
+        val simpleName = javaClass.simpleName.takeIf { it.isNotBlank() }
+        val generatedLayoutType = className.toGeneratedLayoutType()
+        return when {
+            className.contains("Column", ignoreCase = true) -> "Column"
+            className.contains("Row", ignoreCase = true) -> "Row"
+            className.contains("Box", ignoreCase = true) -> "Box"
+            className.contains("Lazy", ignoreCase = true) -> "LazyLayout"
+            className.contains("Subcompose", ignoreCase = true) -> "SubcomposeLayout"
+            generatedLayoutType != null -> generatedLayoutType
+            simpleName != null && '$' !in simpleName && simpleName.endsWith("MeasurePolicy") -> {
+                simpleName.removeSuffix("MeasurePolicy").takeIf { it.isNotBlank() }
+            }
+            else -> null
+        }
+    }
+
+    private fun String.toGeneratedLayoutType(): String? {
+        val generatedClassName = substringAfterLast('.').substringBefore('$')
+        return GENERATED_LAYOUT_TYPES[generatedClassName]
+    }
+
+    private fun Any?.toObjectList(): List<Any>? {
+        return when (this) {
+            is List<*> -> filterNotNull()
+            is Iterable<*> -> filterNotNull()
+            else -> null
+        }
+    }
+
     private fun Any.callNoArg(name: String): Any? = callByName(name)
 
     private fun Any.callByName(name: String, vararg args: Any?): Any? {
-        val method = javaClass.methods.firstOrNull { it.name == name && it.parameterTypes.size == args.size }
-            ?: javaClass.findDeclaredMethod(name, args.size)
-            ?: return null
+        val method = javaClass.findMethod(name, args.size) ?: return null
         return runCatching {
-            method.isAccessible = true
             method.invoke(this, *args)
         }.getOrNull()
     }
 
-    private fun Class<*>.findDeclaredMethod(name: String, parameterCount: Int): java.lang.reflect.Method? {
+    private fun Class<*>.findMethod(name: String, parameterCount: Int): Method? {
+        val key = "${name}#${parameterCount}"
+        synchronized(methodCache) {
+            methodCache[this]?.let { cache ->
+                if (cache.containsKey(key)) {
+                    return cache[key] as? Method
+                }
+            }
+        }
+
+        val method = methods.firstOrNull { it.name == name && it.parameterTypes.size == parameterCount }
+            ?: findDeclaredMethod(name, parameterCount)
+        runCatching { method?.isAccessible = true }
+        synchronized(methodCache) {
+            methodCache.getOrPut(this) { HashMap() }[key] = method ?: NO_MEMBER
+        }
+        return method
+    }
+
+    private fun Class<*>.findDeclaredMethod(name: String, parameterCount: Int): Method? {
         var current: Class<*>? = this
         while (current != null) {
             current.declaredMethods.firstOrNull {
@@ -337,27 +733,103 @@ class UETComposeElementCollector : ElementCollector {
     }
 
     private fun Any.readField(name: String): Any? {
-        var current: Class<*>? = javaClass
+        val field = javaClass.findField(name) ?: return null
+        return runCatching { field.get(this) }.getOrNull()
+    }
+
+    private fun Class<*>.findField(name: String): Field? {
+        synchronized(fieldCache) {
+            fieldCache[this]?.let { cache ->
+                if (cache.containsKey(name)) {
+                    return cache[name] as? Field
+                }
+            }
+        }
+
+        var current: Class<*>? = this
         while (current != null) {
-            val value = runCatching {
-                val field = current.getDeclaredField(name)
-                field.isAccessible = true
-                field.get(this)
+            val currentClass = current
+            val field = runCatching {
+                currentClass.getDeclaredField(name).also { field ->
+                    field.isAccessible = true
+                }
             }.getOrNull()
-            if (value != null) {
-                return value
+            if (field != null) {
+                synchronized(fieldCache) {
+                    fieldCache.getOrPut(this) { HashMap() }[name] = field
+                }
+                return field
             }
             current = current.superclass
         }
+
+        synchronized(fieldCache) {
+            fieldCache.getOrPut(this) { HashMap() }[name] = NO_MEMBER
+        }
         return null
     }
+
+    private fun View.readWindowOffset(): WindowOffset {
+        val screen = IntArray(2)
+        val window = IntArray(2)
+        getLocationOnScreen(screen)
+        getLocationInWindow(window)
+        return WindowOffset(this, screen[0] - window[0], screen[1] - window[1])
+    }
+
+    private data class WindowOffset(
+        val hostView: View,
+        val x: Int,
+        val y: Int
+    )
+
+    private data class LayoutCollectStats(
+        var visitedCount: Int = 0,
+        var addedCount: Int = 0,
+        var boundsNullCount: Int = 0,
+        var boundsEmptyCount: Int = 0,
+        var boundsNullSampleLogged: Boolean = false,
+        var skippedDuplicateCount: Int = 0
+    )
 
     private data class OwnerInfo(
         val owner: SemanticsOwner,
         val hostView: View
     )
 
+    private data class SemanticsIndex(
+        private val byLayoutNodeId: Map<Int, ComposeNodeInfo>,
+        private val bySemanticsId: Map<Int, ComposeNodeInfo>
+    ) {
+        val layoutNodeCount: Int
+            get() = byLayoutNodeId.size
+
+        val semanticsNodeCount: Int
+            get() = bySemanticsId.size
+
+        fun find(layoutNodeId: Int, semanticsId: Any?): ComposeNodeInfo? {
+            byLayoutNodeId[layoutNodeId]?.let { return it }
+            val semanticsNodeId = (semanticsId as? Number)?.toInt() ?: return null
+            return bySemanticsId[semanticsNodeId]
+        }
+
+        companion object {
+            val EMPTY = SemanticsIndex(emptyMap(), emptyMap())
+        }
+    }
+
     private companion object {
+        private val NO_MEMBER = Any()
+        private val methodCache = HashMap<Class<*>, MutableMap<String, Any>>()
+        private val fieldCache = HashMap<Class<*>, MutableMap<String, Any>>()
+        private val GENERATED_LAYOUT_TYPES = mapOf(
+            "ImageKt" to "Image"
+        )
+        private val SEMANTICS_MATCH_IGNORED_PROPERTY_NAMES = setOf(
+            "NodeSource",
+            "Path"
+        )
+        private const val TAG = "UETComposeCollector"
         const val COMPOSE_PLATFORM_PACKAGE = "androidx.compose.ui.platform."
         const val MAX_OWNER_SEARCH_DEPTH = 4
         const val ROOT_PATH = "Root"
