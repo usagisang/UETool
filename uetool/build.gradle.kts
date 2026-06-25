@@ -28,6 +28,7 @@ android {
 dependencies {
     compileOnly(project(":uetool-base"))
 //  api("me.ele:uetool-base:${libs.versions.release.get()}")
+    implementation(libs.androidx.appcompat)
     implementation(libs.scalpel)
     implementation(libs.treeview) {
         exclude(group = "com.android.support", module = "appcompat-v7")
