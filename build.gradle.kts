@@ -5,8 +5,8 @@ plugins {
 }
 
 allprojects {
-    group = "me.ele"
-    version = findProperty("uetoolVersion")?.toString() ?: "1.3.0"
+    group = "com.github.usagisang"
+    version = findProperty("uetoolVersion")?.toString() ?: "1.3.5"
 }
 
 tasks.register<Delete>("clean") {
