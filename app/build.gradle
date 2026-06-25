@@ -1,5 +1,4 @@
 apply plugin: 'com.android.application'
-apply plugin: 'kotlin-android'
 
 android {
     namespace 'me.ele.uetool.sample'
@@ -26,14 +25,11 @@ android {
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
     }
-    kotlinOptions {
-        jvmTarget = '11'
-    }
     buildTypes {
         release {
             signingConfig signingConfigs.release
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 }
@@ -52,6 +48,7 @@ dependencies {
     debugImplementation project(':uetool')
     debugImplementation project(':uetool-fresco')
     debugImplementation project(':uetool-base')
+    debugImplementation project(':uetool-compose')
     releaseImplementation project(':uetool-no-op')
 //  debugImplementation "me.ele:uetool:${versions.release}"
 //  debugImplementation "me.ele:uetool-fresco:${versions.release}"

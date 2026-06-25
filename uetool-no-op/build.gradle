@@ -4,6 +4,7 @@ apply plugin: 'maven-publish'
 android {
     namespace 'me.ele.uetool'
     compileSdk versions.compileSdk
+    enableKotlin = false
 
     defaultConfig {
         minSdk versions.minSdk
