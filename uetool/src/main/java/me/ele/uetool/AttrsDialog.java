@@ -125,6 +125,7 @@ public class AttrsDialog extends Dialog {
                 try {
                     IAttrs attrs = (IAttrs) Class.forName(attrsProvider).newInstance();
                     items.addAll(attrs.getAttrs(element));
+                } catch (ClassNotFoundException ignored) {
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -523,10 +524,12 @@ public class AttrsDialog extends Dialog {
                 super.bindView(briefDescItem);
                 View view = briefDescItem.getElement().getView();
                 StringBuilder sb = new StringBuilder();
-                sb.append(view.getClass().getName());
-                String resName = Util.getResourceName(view.getId());
-                if (!TextUtils.isEmpty(resName)) {
-                    sb.append("@").append(resName);
+                sb.append(briefDescItem.getElement().getElementName());
+                if (!briefDescItem.getElement().isVirtual()) {
+                    String resName = Util.getResourceName(view.getId());
+                    if (!TextUtils.isEmpty(resName)) {
+                        sb.append("@").append(resName);
+                    }
                 }
                 vDesc.setText(sb.toString());
 

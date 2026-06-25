@@ -13,6 +13,7 @@ import android.view.WindowManager;
 import android.widget.Toast;
 import me.ele.uetool.base.DimenUtil;
 import me.ele.uetool.base.Element;
+import me.ele.uetool.base.ElementCollector;
 import me.ele.uetool.base.ReflectionP;
 
 import java.lang.reflect.Field;
@@ -164,7 +165,7 @@ public class CollectViewsLayout extends View {
     private void createElements(View view) {
 
         List<Element> elements = new ArrayList<>();
-        traverse(view, elements);
+        traverse(view, elements, UETool.getInstance().getElementCollectors());
 
         //  面积从大到小排序
         Collections.sort(elements, new Comparator<Element>() {
@@ -178,15 +179,24 @@ public class CollectViewsLayout extends View {
 
     }
 
-    private void traverse(View view, List<Element> elements) {
+    private void traverse(View view, List<Element> elements, List<ElementCollector> collectors) {
         if (UETool.getInstance().getFilterClasses().contains(view.getClass().getName())) return;
         if (view.getAlpha() == 0 || view.getVisibility() != View.VISIBLE) return;
         if (getResources().getString(R.string.uet_disable).equals(view.getTag())) return;
         elements.add(new Element(view));
+        for (ElementCollector collector : collectors) {
+            try {
+                if (collector.collect(view, elements)) {
+                    return;
+                }
+            } catch (Throwable throwable) {
+                throwable.printStackTrace();
+            }
+        }
         if (view instanceof ViewGroup) {
             ViewGroup parent = (ViewGroup) view;
             for (int i = 0; i < parent.getChildCount(); i++) {
-                traverse(parent.getChildAt(i), elements);
+                traverse(parent.getChildAt(i), elements, collectors);
             }
         }
     }

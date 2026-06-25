@@ -25,7 +25,7 @@ public class UETCore implements IAttrs {
 
         View view = element.getView();
 
-        items.add(new TextItem("Fragment", Util.getCurrentFragmentName(element.getView()), new View.OnClickListener() {
+        items.add(new TextItem("Fragment", Util.getCurrentFragmentName(view), new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 Activity activity = Util.getCurrentActivity();
@@ -35,17 +35,27 @@ public class UETCore implements IAttrs {
                 new FragmentListTreeDialog(v.getContext()).show();
             }
         }));
-        items.add(new TextItem("ViewHolder", Util.getViewHolderName(element.getView())));
-        items.add(new SwitchItem("Move", element, SwitchItem.Type.TYPE_MOVE));
+        items.add(new TextItem("ViewHolder", Util.getViewHolderName(view)));
+        if (!element.isVirtual()) {
+            items.add(new SwitchItem("Move", element, SwitchItem.Type.TYPE_MOVE));
+        }
         items.add(new SwitchItem("ValidViews", element, SwitchItem.Type.TYPE_SHOW_VALID_VIEWS));
 
-        IAttrs iAttrs = AttrsManager.createAttrs(view);
-        if (iAttrs != null) {
-            items.addAll(iAttrs.getAttrs(element));
+        if (!element.isVirtual()) {
+            IAttrs iAttrs = AttrsManager.createAttrs(view);
+            if (iAttrs != null) {
+                items.addAll(iAttrs.getAttrs(element));
+            }
         }
 
         items.add(new TitleItem("COMMON"));
-        items.add(new TextItem("Class", view.getClass().getName()));
+        items.add(new TextItem("Class", element.getElementName()));
+        if (element.isVirtual()) {
+            items.add(new TextItem("HostView", view.getClass().getName()));
+            items.add(new TextItem("Width（dp）", px2dip(element.getRect().width())));
+            items.add(new TextItem("Height（dp）", px2dip(element.getRect().height())));
+            return items;
+        }
         items.add(new TextItem("Id", Util.getResId(view)));
         items.add(new TextItem("ResName", Util.getResourceName(view.getId())));
         items.add(new TextItem("Tag", Util.getViewTag(view)));

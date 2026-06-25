@@ -17,6 +17,12 @@ public class UETool {
     public static void putAttrsProviderClass(String className) {
     }
 
+    public static void putElementCollectorClass(Class clazz) {
+    }
+
+    public static void putElementCollectorClass(String className) {
+    }
+
     public static boolean showUETMenu() {
         return false;
     }

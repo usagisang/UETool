@@ -23,6 +23,7 @@ import me.ele.uetool.attrdialog.binder.SwitchItemBinder;
 import me.ele.uetool.attrdialog.binder.TextItemBinder;
 import me.ele.uetool.attrdialog.binder.TitleItemBinder;
 import me.ele.uetool.base.Application;
+import me.ele.uetool.base.ElementCollector;
 import me.ele.uetool.base.ItemViewBinder;
 import me.ele.uetool.base.item.AddMinusEditItem;
 import me.ele.uetool.base.item.BitmapItem;
@@ -39,8 +40,14 @@ public class UETool {
     private Set<String> filterClassesSet = new HashSet<>();
     private List<String> attrsProviderSet = new ArrayList<String>() {
         {
+            add("me.ele.uetool.compose.UETComposeAttrs");
             add(UETCore.class.getName());
             add("me.ele.uetool.fresco.UETFresco");
+        }
+    };
+    private List<String> elementCollectorSet = new ArrayList<String>() {
+        {
+            add("me.ele.uetool.compose.UETComposeElementCollector");
         }
     };
     private Activity targetActivity;
@@ -82,6 +89,14 @@ public class UETool {
         getInstance().putAttrsProviderClassName(className);
     }
 
+    public static void putElementCollectorClass(Class clazz) {
+        putElementCollectorClass(clazz.getName());
+    }
+
+    public static void putElementCollectorClass(String className) {
+        getInstance().putElementCollectorClassName(className);
+    }
+
     public static boolean showUETMenu() {
         return getInstance().showMenu();
     }
@@ -100,6 +115,10 @@ public class UETool {
 
     private void putAttrsProviderClassName(String className) {
         attrsProviderSet.add(0, className);
+    }
+
+    private void putElementCollectorClassName(String className) {
+        elementCollectorSet.add(0, className);
     }
 
     private boolean showMenu() {
@@ -152,6 +171,19 @@ public class UETool {
 
     public List<String> getAttrsProvider() {
         return attrsProviderSet;
+    }
+
+    public List<ElementCollector> getElementCollectors() {
+        List<ElementCollector> collectors = new ArrayList<>();
+        for (String collectorClass : elementCollectorSet) {
+            try {
+                collectors.add((ElementCollector) Class.forName(collectorClass).newInstance());
+            } catch (ClassNotFoundException ignored) {
+            } catch (Throwable throwable) {
+                throwable.printStackTrace();
+            }
+        }
+        return collectors;
     }
 
     void release() {

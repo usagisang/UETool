@@ -13,9 +13,17 @@ public class Element {
     private Element parentElement;
 
     public Element(View view) {
+        this(view, null);
+    }
+
+    public Element(View view, Rect rect) {
         this.view = view;
-        reset();
-        originRect.set(rect.left, rect.top, rect.right, rect.bottom);
+        if (rect == null) {
+            reset();
+        } else {
+            this.rect.set(rect);
+        }
+        originRect.set(this.rect.left, this.rect.top, this.rect.right, this.rect.bottom);
     }
 
     public View getView() {
@@ -56,9 +64,21 @@ public class Element {
         return parentElement;
     }
 
+    public void setParentElement(Element parentElement) {
+        this.parentElement = parentElement;
+    }
+
+    public boolean isVirtual() {
+        return false;
+    }
+
+    public String getElementName() {
+        return view.getClass().getName();
+    }
+
     //  view 的面积
     public int getArea() {
-        return view.getWidth() * view.getHeight();
+        return rect.width() * rect.height();
     }
 
     @Override
