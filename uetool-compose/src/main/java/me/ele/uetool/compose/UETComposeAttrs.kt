@@ -19,11 +19,14 @@ class UETComposeAttrs : IAttrs {
         items.add(TextItem("Node", composeElement.elementName))
         items.add(TextItem("NodeId", nodeInfo.id.toString()))
         items.add(TextItem("Depth", nodeInfo.depth.toString()))
+        nodeInfo.get("Path")?.let {
+            items.add(TextItem("Path", it, true))
+        }
         items.add(TextItem("Bounds(px)", "${rect.left},${rect.top} - ${rect.right},${rect.bottom}"))
         items.add(TextItem("Size(dp)", "${DimenUtil.px2dip(rect.width().toFloat(), true)} * ${DimenUtil.px2dip(rect.height().toFloat(), true)}"))
 
         nodeInfo.properties
-            .filterKeys { it != "Semantics" }
+            .filterKeys { it != "Semantics" && it != "Path" }
             .forEach { (name, detail) -> items.add(TextItem(name, detail, true)) }
 
         nodeInfo.get("Semantics")?.let {
