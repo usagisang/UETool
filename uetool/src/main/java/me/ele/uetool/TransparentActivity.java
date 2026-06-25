@@ -2,8 +2,8 @@ package me.ele.uetool;
 
 import android.graphics.Color;
 import android.os.Bundle;
-import android.support.annotation.IntDef;
-import android.support.v7.app.AppCompatActivity;
+import androidx.annotation.IntDef;
+import androidx.appcompat.app.AppCompatActivity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;

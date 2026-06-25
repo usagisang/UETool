@@ -8,13 +8,13 @@ import android.content.res.Resources;
 import android.graphics.*;
 import android.graphics.drawable.*;
 import android.os.Build;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.graphics.drawable.VectorDrawableCompat;
-import android.support.v4.app.Fragment;
-import android.support.v4.app.FragmentActivity;
-import android.support.v4.app.FragmentManager;
-import android.support.v7.widget.RecyclerView;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.vectordrawable.graphics.drawable.VectorDrawableCompat;
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentActivity;
+import androidx.fragment.app.FragmentManager;
+import androidx.recyclerview.widget.RecyclerView;
 import android.text.SpannedString;
 import android.text.style.ImageSpan;
 import android.util.Pair;
@@ -221,7 +221,7 @@ public class Util {
             } else if (drawable instanceof VectorDrawableCompat) {
                 Field mVectorStateField = VectorDrawableCompat.class.getDeclaredField("mVectorState");
                 mVectorStateField.setAccessible(true);
-                Field mCachedBitmapField = Class.forName("android.support.graphics.drawable.VectorDrawableCompat$VectorDrawableCompatState").getDeclaredField("mCachedBitmap");
+                Field mCachedBitmapField = Class.forName("androidx.vectordrawable.graphics.drawable.VectorDrawableCompat$VectorDrawableCompatState").getDeclaredField("mCachedBitmap");
                 mCachedBitmapField.setAccessible(true);
                 return (Bitmap) mCachedBitmapField.get(mVectorStateField.get(drawable));
             }

@@ -1,8 +1,8 @@
 package me.ele.uetool.sample.ui.fragmentsample
 
-import android.arch.lifecycle.ViewModelProviders
+import androidx.lifecycle.ViewModelProvider
 import android.os.Bundle
-import android.support.v4.app.Fragment
+import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -23,7 +23,7 @@ class FragmentSampleFragment : Fragment() {
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
         super.onActivityCreated(savedInstanceState)
-        viewModel = ViewModelProviders.of(this).get(FragmentSampleViewModel::class.java)
+        viewModel = ViewModelProvider(this).get(FragmentSampleViewModel::class.java)
         // TODO: Use the ViewModel
 
         childFragmentManager.beginTransaction()

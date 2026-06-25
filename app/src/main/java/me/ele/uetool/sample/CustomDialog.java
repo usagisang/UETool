@@ -3,7 +3,7 @@ package me.ele.uetool.sample;
 import android.app.Dialog;
 import android.content.Context;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 import android.view.WindowManager;
 
 public class CustomDialog extends Dialog {

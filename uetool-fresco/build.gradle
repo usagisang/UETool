@@ -1,15 +1,24 @@
 apply plugin: 'com.android.library'
-apply plugin: 'com.github.dcendents.android-maven'
+apply plugin: 'maven-publish'
 
 android {
-    compileSdkVersion versions.compileSdk
+    namespace 'me.ele.uetool.fresco'
+    compileSdk versions.compileSdk
 
     defaultConfig {
-        minSdkVersion versions.minSdk
+        minSdk versions.minSdk
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
     }
 
-    lintOptions {
+    lint {
         abortOnError false
+    }
+
+    publishing {
+        singleVariant('release')
     }
 }
 
@@ -17,4 +26,14 @@ dependencies {
     compileOnly project(':uetool-base')
 //      implementation "me.ele:uetool-base:${versions.release}"
     compileOnly "com.facebook.fresco:fresco:${versions.fresco}"
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            release(MavenPublication) {
+                from components.release
+            }
+        }
+    }
 }

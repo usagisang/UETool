@@ -4,9 +4,9 @@ import android.content.Intent;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
-import android.support.v4.content.ContextCompat;
-import android.support.v7.app.AppCompatActivity;
-import android.support.v7.widget.SwitchCompat;
+import androidx.core.content.ContextCompat;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.SwitchCompat;
 import android.text.Spannable;
 import android.text.SpannableString;
 import android.view.View;
@@ -49,18 +49,15 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void onClick(View view) {
-        switch (view.getId()) {
-            case R.id.btn1:
-                startActivity(new Intent(this, SecondActivity.class));
-                break;
-            case R.id.btn2:
-                new CustomDialog(this).show();
-                break;
-            case R.id.btn3:
-                startActivity(new Intent(this, FragmentSampleActivity.class));
-                break;
-            case R.id.btn4:
-                startActivity(new Intent(this, RecyclerViewActivity.class));
+        int viewId = view.getId();
+        if (viewId == R.id.btn1) {
+            startActivity(new Intent(this, SecondActivity.class));
+        } else if (viewId == R.id.btn2) {
+            new CustomDialog(this).show();
+        } else if (viewId == R.id.btn3) {
+            startActivity(new Intent(this, FragmentSampleActivity.class));
+        } else if (viewId == R.id.btn4) {
+            startActivity(new Intent(this, RecyclerViewActivity.class));
         }
     }
 

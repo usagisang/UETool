@@ -33,7 +33,7 @@
             android:background="@drawable/uet_selector_minus"
             />
 
-        <android.support.v7.widget.AppCompatEditText
+        <androidx.appcompat.widget.AppCompatEditText
             android:id="@+id/detail"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

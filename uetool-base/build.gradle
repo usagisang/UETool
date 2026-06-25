@@ -1,21 +1,43 @@
 apply plugin: 'com.android.library'
-apply plugin: 'com.github.dcendents.android-maven'
+apply plugin: 'maven-publish'
 
 android {
-    compileSdkVersion versions.compileSdk
+    namespace 'me.ele.uetool.base'
+    compileSdk versions.compileSdk
 
     defaultConfig {
-        minSdkVersion versions.minSdk
+        minSdk versions.minSdk
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
     }
 
-    dependencies {
-        api "com.android.support:appcompat-v7:27.1.1"
-        api "com.android.support:recyclerview-v7:27.1.1"
-        api "com.android.support:support-v4:27.1.1"
-        implementation "com.github.tiann:FreeReflection:3.1.0"
-    }
-
-    lintOptions {
+    lint {
         abortOnError false
+    }
+
+    publishing {
+        singleVariant('release')
+    }
+}
+
+dependencies {
+    api "androidx.annotation:annotation:${versions.annotation}"
+    api "androidx.appcompat:appcompat:${versions.appcompat}"
+    api "androidx.core:core:${versions.core}"
+    api "androidx.fragment:fragment:${versions.fragment}"
+    api "androidx.recyclerview:recyclerview:${versions.recyclerview}"
+    api "androidx.vectordrawable:vectordrawable:${versions.vectorDrawable}"
+    implementation "com.github.tiann:FreeReflection:3.1.0"
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            release(MavenPublication) {
+                from components.release
+            }
+        }
     }
 }

@@ -1,23 +1,42 @@
 apply plugin: 'com.android.library'
-apply plugin: 'com.github.dcendents.android-maven'
+apply plugin: 'maven-publish'
 
 android {
-    compileSdkVersion versions.compileSdk
+    namespace 'me.ele.uetool'
+    compileSdk versions.compileSdk
 
     defaultConfig {
-        minSdkVersion versions.minSdk
+        minSdk versions.minSdk
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
     }
 
-    lintOptions {
+    lint {
         abortOnError false
+    }
+
+    publishing {
+        singleVariant('release')
     }
 }
 
 dependencies {
     compileOnly project(':uetool-base')
 //      api "me.ele:uetool-base:${versions.release}"
-    implementation 'com.jakewharton.scalpel:scalpel:1.1.2'
-    implementation ('com.github.bmelnychuk:atv:1.2.9') {
+    implementation "com.jakewharton.scalpel:scalpel:${versions.scalpel}"
+    implementation ("com.github.bmelnychuk:atv:${versions.treeView}") {
         exclude group: 'com.android.support', module: 'appcompat-v7'
+    }
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            release(MavenPublication) {
+                from components.release
+            }
+        }
     }
 }

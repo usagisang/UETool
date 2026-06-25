@@ -36,7 +36,7 @@
                 android:textColor="#FFF"
                 android:text="点击带下划线的 fragment 会选中对应布局区域"/>
 
-        <android.support.v7.widget.AppCompatCheckBox
+        <androidx.appcompat.widget.AppCompatCheckBox
                 android:id="@+id/checkbox"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
