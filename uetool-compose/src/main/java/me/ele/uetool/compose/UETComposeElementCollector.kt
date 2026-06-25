@@ -265,6 +265,7 @@ class UETComposeElementCollector : ElementCollector {
     ): ComposeNodeInfo {
         val info = ComposeNodeInfo(nodeId, depth)
         val measurePolicy = callNoArg("getMeasurePolicy")
+        val innerMeasurePolicy = measurePolicy?.unwrapMeasurePolicy()
         val semanticsConfig = callNoArg("getSemanticsConfiguration") as? SemanticsConfiguration
         val semanticsId = callNoArg("getSemanticsId")
 
@@ -277,7 +278,10 @@ class UETComposeElementCollector : ElementCollector {
         info.put("SemanticsId", semanticsId)
         info.put("CompositeKeyHash", callNoArg("getCompositeKeyHash"))
         info.put("MeasurePolicy", measurePolicy?.toClassDetail())
-        info.put("LayoutType", measurePolicy?.toLayoutType())
+        if (innerMeasurePolicy !== measurePolicy) {
+            info.put("InnerMeasurePolicy", innerMeasurePolicy?.toClassDetail())
+        }
+        info.put("LayoutType", innerMeasurePolicy?.toLayoutType())
         (callNoArg("getInteropView") as? View)?.let { info.put("InteropView", it.javaClass.name) }
         semanticsConfig?.let { info.putSemanticsConfiguration(it) }
         semanticsIndex.find(nodeId, semanticsId)?.let { info.putMatchedSemantics(it) }
@@ -666,7 +670,9 @@ class UETComposeElementCollector : ElementCollector {
         val className = javaClass.name
         val simpleName = javaClass.simpleName.takeIf { it.isNotBlank() }
         val generatedLayoutType = className.toGeneratedLayoutType()
+        val knownLayoutType = simpleName?.let { KNOWN_MEASURE_POLICY_LAYOUT_TYPES[it] }
         return when {
+            knownLayoutType != null -> knownLayoutType
             className.contains("Column", ignoreCase = true) -> "Column"
             className.contains("Row", ignoreCase = true) -> "Row"
             className.contains("Box", ignoreCase = true) -> "Box"
@@ -676,6 +682,32 @@ class UETComposeElementCollector : ElementCollector {
             simpleName != null && '$' !in simpleName && simpleName.endsWith("MeasurePolicy") -> {
                 simpleName.removeSuffix("MeasurePolicy").takeIf { it.isNotBlank() }
             }
+            else -> null
+        }
+    }
+
+    private fun Any.unwrapMeasurePolicy(): Any {
+        var current = this
+        val seen = HashSet<Int>()
+        repeat(MAX_MEASURE_POLICY_UNWRAP_DEPTH) {
+            if (!seen.add(System.identityHashCode(current))) {
+                return current
+            }
+            current.readWrappedMeasurePolicy()?.let { wrapped ->
+                if (wrapped !== current) {
+                    current = wrapped
+                    return@repeat
+                }
+            }
+            return current
+        }
+        return current
+    }
+
+    private fun Any.readWrappedMeasurePolicy(): Any? {
+        val simpleName = javaClass.simpleName
+        return when (simpleName) {
+            "MultiContentMeasurePolicyImpl" -> readField("measurePolicy")
             else -> null
         }
     }
@@ -825,6 +857,10 @@ class UETComposeElementCollector : ElementCollector {
         private val GENERATED_LAYOUT_TYPES = mapOf(
             "ImageKt" to "Image"
         )
+        private val KNOWN_MEASURE_POLICY_LAYOUT_TYPES = mapOf(
+            "FlowMeasurePolicy" to "FlowLayout"
+        )
+        private const val MAX_MEASURE_POLICY_UNWRAP_DEPTH = 4
         private val SEMANTICS_MATCH_IGNORED_PROPERTY_NAMES = setOf(
             "NodeSource",
             "Path"
