@@ -2,7 +2,6 @@ package me.ele.uetool;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
-import android.animation.TimeInterpolator;
 import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.content.Context;
@@ -27,6 +26,7 @@ import static me.ele.uetool.TransparentActivity.Type.TYPE_UNKNOWN;
 public class UETMenu extends LinearLayout {
 
     private View vMenu;
+    private View vSubMenuClip;
     private ViewGroup vSubMenuContainer;
     private ValueAnimator animator;
     private Interpolator defaultInterpolator = new AccelerateDecelerateInterpolator();
@@ -40,9 +40,12 @@ public class UETMenu extends LinearLayout {
      * 容器刚出来的时候的宽度，用于播放动画
      */
     private int vSubMenuContainerWidth = 0;
+    private boolean isSubMenuOpen = false;
+
     public UETMenu(final Context context, int y) {
         super(context);
         inflate(context, R.layout.uet_menu_layout, this);
+        setOrientation(HORIZONTAL);
         setGravity(Gravity.CENTER_VERTICAL);
 
         this.y = y;
@@ -50,6 +53,7 @@ public class UETMenu extends LinearLayout {
         windowManager = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
 
         vMenu = findViewById(R.id.menu);
+        vSubMenuClip = findViewById(R.id.sub_menu_clip);
         vSubMenuContainer = findViewById(R.id.sub_menu_container);
         Resources resources = context.getResources();
         subMenus.add(new UETSubMenu.SubMenu(resources.getString(R.string.uet_catch_view), R.drawable.uet_edit_attr, new OnClickListener() {
@@ -155,8 +159,10 @@ public class UETMenu extends LinearLayout {
             @Override
             public boolean onPreDraw() {
                 vSubMenuContainerWidth = vSubMenuContainer.getMeasuredWidth();
+                setSubMenuContainerWidth(vSubMenuContainerWidth);
+                setSubMenuClipWidth(0);
                 vSubMenuContainer.setTranslationX(-vSubMenuContainerWidth); // 隐藏
-                vSubMenuContainer.setVisibility(View.GONE); // 设置为不可见，移除父容器占位
+                vSubMenuClip.setVisibility(View.GONE); // 设置为不可见，移除父容器占位
                 vSubMenuContainer.getViewTreeObserver().removeOnPreDrawListener(this);
                 // 这次不需要绘制，避免闪烁
                 return false;
@@ -165,20 +171,27 @@ public class UETMenu extends LinearLayout {
     }
 
     private void startAnim() {
+        if (vSubMenuContainerWidth <= 0 || (animator != null && animator.isRunning())) {
+            return;
+        }
         ensureAnim();
-        final boolean isOpen = vSubMenuContainer.getTranslationX() <= -vSubMenuContainerWidth;
-        animator.setInterpolator(isOpen ? defaultInterpolator : new ReverseInterpolator(defaultInterpolator));
+        final boolean open = !isSubMenuOpen;
+        animator.setIntValues(open ? 0 : vSubMenuContainerWidth, open ? vSubMenuContainerWidth : 0);
+        animator.setInterpolator(defaultInterpolator);
         animator.removeAllListeners();
         animator.addListener(new AnimatorListenerAdapter() {
             @Override
             public void onAnimationStart(Animator animation) {
-                vSubMenuContainer.setVisibility(VISIBLE);
+                vSubMenuClip.setVisibility(VISIBLE);
+                setSubMenuClipWidth(open ? 0 : vSubMenuContainerWidth);
+                vSubMenuContainer.setTranslationX(open ? -vSubMenuContainerWidth : 0);
             }
 
             @Override
             public void onAnimationEnd(Animator animation) {
-                if (!isOpen) {
-                    vSubMenuContainer.setVisibility(GONE);
+                isSubMenuOpen = open;
+                if (!isSubMenuOpen) {
+                    vSubMenuClip.setVisibility(GONE);
                 }
             }
         });
@@ -187,14 +200,32 @@ public class UETMenu extends LinearLayout {
 
     private void ensureAnim() {
         if (animator == null) {
-            animator = ValueAnimator.ofInt(-vSubMenuContainerWidth, 0);
+            animator = ValueAnimator.ofInt(0, vSubMenuContainerWidth);
             animator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
                 @Override
                 public void onAnimationUpdate(ValueAnimator animation) {
-                    vSubMenuContainer.setTranslationX((int) animation.getAnimatedValue());
+                    int width = (int) animation.getAnimatedValue();
+                    setSubMenuClipWidth(width);
+                    vSubMenuContainer.setTranslationX(width - vSubMenuContainerWidth);
                 }
             });
             animator.setDuration(400);
+        }
+    }
+
+    private void setSubMenuClipWidth(int width) {
+        ViewGroup.LayoutParams layoutParams = vSubMenuClip.getLayoutParams();
+        if (layoutParams.width != width) {
+            layoutParams.width = width;
+            vSubMenuClip.setLayoutParams(layoutParams);
+        }
+    }
+
+    private void setSubMenuContainerWidth(int width) {
+        ViewGroup.LayoutParams layoutParams = vSubMenuContainer.getLayoutParams();
+        if (layoutParams.width != width) {
+            layoutParams.width = width;
+            vSubMenuContainer.setLayoutParams(layoutParams);
         }
     }
 
@@ -250,17 +281,4 @@ public class UETMenu extends LinearLayout {
         return params;
     }
 
-    private static class ReverseInterpolator implements TimeInterpolator {
-
-        private TimeInterpolator mWrappedInterpolator;
-
-        ReverseInterpolator(TimeInterpolator interpolator) {
-            mWrappedInterpolator = interpolator;
-        }
-
-        @Override
-        public float getInterpolation(float input) {
-            return mWrappedInterpolator.getInterpolation(Math.abs(input - 1f));
-        }
-    }
 }
