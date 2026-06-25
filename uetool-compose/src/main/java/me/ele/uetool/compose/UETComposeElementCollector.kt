@@ -13,6 +13,7 @@ import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsOwner
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.text.AnnotatedString
 import me.ele.uetool.base.Element
 import me.ele.uetool.base.ElementCollector
 import kotlin.math.roundToInt
@@ -33,7 +34,7 @@ class UETComposeElementCollector : ElementCollector {
     }
 
     private fun View.isComposeHostCandidate(): Boolean {
-        if (this is AbstractComposeView || this is ComposeView) {
+        if (this is AbstractComposeView) {
             return true
         }
         return javaClass.name.startsWith(COMPOSE_PLATFORM_PACKAGE) && readSemanticsOwner() != null
@@ -117,8 +118,12 @@ class UETComposeElementCollector : ElementCollector {
             ?: readField("unmergedConfig") as? SemanticsConfiguration
 
         if (config != null) {
-            info.put("Text", runCatching { config.getOrNull(SemanticsProperties.Text) }.getOrNull())
-            info.put("ContentDescription", runCatching { config.getOrNull(SemanticsProperties.ContentDescription) }.getOrNull())
+            info.put("Text", runCatching { config.getOrNull(SemanticsProperties.Text)?.toPlainText() }.getOrNull())
+            info.put(
+                "ContentDescription",
+                runCatching { config.getOrNull(SemanticsProperties.ContentDescription)?.toPlainContentDescription() }
+                    .getOrNull()
+            )
             info.put("TestTag", runCatching { config.getOrNull(SemanticsProperties.TestTag) }.getOrNull())
             info.put("Role", runCatching { config.getOrNull(SemanticsProperties.Role) }.getOrNull())
             info.put("StateDescription", runCatching { config.getOrNull(SemanticsProperties.StateDescription) }.getOrNull())
@@ -162,6 +167,14 @@ class UETComposeElementCollector : ElementCollector {
 
     private fun ComposeRect.toAndroidRect(): Rect {
         return Rect(left.roundToInt(), top.roundToInt(), right.roundToInt(), bottom.roundToInt())
+    }
+
+    private fun List<AnnotatedString>.toPlainText(): String {
+        return joinToString(separator = ", ") { it.text }
+    }
+
+    private fun List<String>.toPlainContentDescription(): String {
+        return joinToString(separator = ", ")
     }
 
     private fun Any.callNoArg(name: String): Any? = callByName(name)
