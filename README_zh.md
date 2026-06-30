@@ -1,3 +1,42 @@
+# 修改声明
+
+[![](https://jitpack.io/v/usagisang/UETool.svg)](https://jitpack.io/#usagisang/UETool)
+
+这个 fork 版本的目标是支持 Compose 控件的 debug 功能，为此将整个工程迁移到了 androidx，并且还升级到了较高的 kotlin 版本。
+
+接下来介绍一下如何接入这个组件：
+
+首先，在 settings.gradle.kts 中添加
+
+```kts
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        mavenCentral()
+        maven { url = uri("https://jitpack.io") }
+    }
+}
+```
+
+另外，为了接入这个组件，你必须修改整个依赖的Maven坐标: 
+
+```kts
+dependencies {
+  debugImplementation("com.github.usagisang.UETool:uetool:1.3.5")
+  debugImplementation("com.github.usagisang.UETool:uetool-base:1.3.5")
+  releaseImplementation("com.github.usagisang.UETool:uetool-no-op:1.3.5")
+  
+  // if you want to show compose attrs
+  debugImplementation("com.github.usagisang.UETool:uetool-compose:1.3.5")
+  // if you want to show more attrs about Fresco's DraweeView
+  debugImplementation("com.github.usagisang.UETool:uetool-fresco:1.3.5")
+}
+```
+
+项目原来的 Readme 在下方。
+
+--------------
+
 UETool [![GitHub release](https://img.shields.io/github/release/eleme/UETool.svg?style=social)](https://github.com/eleme/UETool/releases) [![platform](https://img.shields.io/badge/platform-android-brightgreen.svg)](https://developer.android.com/index.html) [![license](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/eleme/UETool/blob/master/LICENSE)
 ======
 

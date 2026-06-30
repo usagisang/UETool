@@ -1,3 +1,44 @@
+# Modification Notice
+
+[![](https://jitpack.io/v/usagisang/UETool.svg)](https://jitpack.io/#usagisang/UETool)
+
+[中文版](https://github.com/eleme/UETool/blob/master/README_zh.md)
+
+The goal of this fork is to support debugging functionality for Compose widgets. To achieve this, the entire project has been migrated to AndroidX and upgraded to a higher Kotlin version.
+
+Below is an introduction on how to integrate this component:
+
+First, add it in your `settings.gradle.kts` at the end of repositories:
+
+```kts
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        mavenCentral()
+        maven { url = uri("https://jitpack.io") }
+    }
+}
+```
+
+Secondly, to integrate this component, you must change the Maven coordinates for all dependencies:
+
+```kts
+dependencies {
+  debugImplementation("com.github.usagisang.UETool:uetool:1.3.5")
+  debugImplementation("com.github.usagisang.UETool:uetool-base:1.3.5")
+  releaseImplementation("com.github.usagisang.UETool:uetool-no-op:1.3.5")
+  
+  // if you want to show compose attrs
+  debugImplementation("com.github.usagisang.UETool:uetool-compose:1.3.5")
+  // if you want to show more attrs about Fresco's DraweeView
+  debugImplementation("com.github.usagisang.UETool:uetool-fresco:1.3.5")
+}
+```
+
+The original project's Readme is below.
+
+--------------------
+
 UETool [![GitHub release](https://img.shields.io/github/release/eleme/UETool.svg?style=social)](https://github.com/eleme/UETool/releases) [![platform](https://img.shields.io/badge/platform-android-brightgreen.svg)](https://developer.android.com/index.html) [![license](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/eleme/UETool/blob/master/LICENSE)
 ======
 
