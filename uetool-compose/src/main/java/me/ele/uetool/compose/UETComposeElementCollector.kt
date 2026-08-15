@@ -18,16 +18,35 @@ import androidx.compose.ui.semantics.SemanticsConfiguration
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsOwner
 import androidx.compose.ui.text.AnnotatedString
+import me.ele.uetool.base.ContextAwareElementCollector
 import me.ele.uetool.base.Element
-import me.ele.uetool.base.ElementCollector
+import me.ele.uetool.base.ElementCollectorContext
 import java.lang.reflect.Field
 import java.lang.reflect.Method
+import java.util.Collections
+import java.util.IdentityHashMap
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalComposeUiApi::class)
-class UETComposeElementCollector : ElementCollector {
+class UETComposeElementCollector : ContextAwareElementCollector {
 
     override fun collect(view: View, elements: MutableList<Element>): Boolean {
+        return collectInternal(view, elements, null)
+    }
+
+    override fun collect(
+        view: View,
+        elements: MutableList<Element>,
+        context: ElementCollectorContext
+    ): Boolean {
+        return collectInternal(view, elements, context)
+    }
+
+    private fun collectInternal(
+        view: View,
+        elements: MutableList<Element>,
+        context: ElementCollectorContext?
+    ): Boolean {
         if (!view.isComposeHostCandidate()) {
             return false
         }
@@ -65,7 +84,9 @@ class UETComposeElementCollector : ElementCollector {
                 windowOffset,
                 null,
                 elements,
+                context,
                 HashSet(),
+                Collections.newSetFromMap(IdentityHashMap<View, Boolean>()),
                 0,
                 ROOT_PATH,
                 semanticsIndex,
@@ -132,7 +153,9 @@ class UETComposeElementCollector : ElementCollector {
         windowOffset: WindowOffset,
         parent: Element?,
         elements: MutableList<Element>,
+        context: ElementCollectorContext?,
         seenNodes: MutableSet<Int>,
+        seenInteropViews: MutableSet<View>,
         depth: Int,
         parentPath: String,
         semanticsIndex: SemanticsIndex,
@@ -146,7 +169,8 @@ class UETComposeElementCollector : ElementCollector {
         stats.visitedCount++
 
         val children = layoutNode.readLayoutChildren()
-        val info = layoutNode.readLayoutNodeInfo(layoutNodeId, depth, children.size, semanticsIndex)
+        val interopView = layoutNode.readInteropView()
+        val info = layoutNode.readLayoutNodeInfo(layoutNodeId, depth, children.size, semanticsIndex, interopView)
         val currentPath = if (depth == 0) ROOT_PATH else "$parentPath/${info.pathSegment()}"
         info.put("Path", currentPath)
         info.put("LayoutPath", currentPath)
@@ -168,19 +192,67 @@ class UETComposeElementCollector : ElementCollector {
             currentParent = element
         }
 
+        interopView?.let {
+            collectInteropViewTree(it, currentParent, elements, context, seenInteropViews)
+        }
+
         children.forEach { child ->
             collectLayoutNode(
                 child,
                 windowOffset,
                 currentParent,
                 elements,
+                context,
                 seenNodes,
+                seenInteropViews,
                 depth + 1,
                 currentPath,
                 semanticsIndex,
                 stats
             )
         }
+    }
+
+    private fun collectInteropViewTree(
+        view: View,
+        parent: Element?,
+        elements: MutableList<Element>,
+        context: ElementCollectorContext?,
+        seenViews: MutableSet<View>
+    ) {
+        if (!seenViews.add(view) || view.alpha == 0f || view.visibility != View.VISIBLE) {
+            return
+        }
+
+        if (view.isComposeInteropContainer()) {
+            (view as? ViewGroup)?.forEachChild { child ->
+                collectInteropViewTree(child, parent, elements, context, seenViews)
+            }
+            return
+        }
+
+        if (context != null) {
+            context.collectViewTree(view, parent)
+            return
+        }
+
+        val element = Element(view)
+        element.setParentElement(parent)
+        elements.add(element)
+
+        (view as? ViewGroup)?.forEachChild { child ->
+            collectInteropViewTree(child, element, elements, null, seenViews)
+        }
+    }
+
+    private inline fun ViewGroup.forEachChild(action: (View) -> Unit) {
+        for (index in 0 until childCount) {
+            action(getChildAt(index))
+        }
+    }
+
+    private fun View.isComposeInteropContainer(): Boolean {
+        return this is ViewGroup && javaClass.name.startsWith(COMPOSE_VIEW_INTEROP_PACKAGE)
     }
 
     private fun collectSemanticsNode(
@@ -261,7 +333,8 @@ class UETComposeElementCollector : ElementCollector {
         nodeId: Int,
         depth: Int,
         childCount: Int,
-        semanticsIndex: SemanticsIndex
+        semanticsIndex: SemanticsIndex,
+        interopView: View?
     ): ComposeNodeInfo {
         val info = ComposeNodeInfo(nodeId, depth)
         val measurePolicy = callNoArg("getMeasurePolicy")
@@ -282,10 +355,15 @@ class UETComposeElementCollector : ElementCollector {
             info.put("InnerMeasurePolicy", innerMeasurePolicy?.toClassDetail())
         }
         info.put("LayoutType", innerMeasurePolicy?.toLayoutType())
-        (callNoArg("getInteropView") as? View)?.let { info.put("InteropView", it.javaClass.name) }
+        interopView?.let { info.put("InteropView", it.javaClass.name) }
         semanticsConfig?.let { info.putSemanticsConfiguration(it) }
         semanticsIndex.find(nodeId, semanticsId)?.let { info.putMatchedSemantics(it) }
         return info
+    }
+
+    private fun Any.readInteropView(): View? {
+        return callNoArg("getInteropView") as? View
+            ?: readField("interopView") as? View
     }
 
     private fun SemanticsNode.readLayoutNode(): Any? {
@@ -867,6 +945,7 @@ class UETComposeElementCollector : ElementCollector {
         )
         private const val TAG = "UETComposeCollector"
         const val COMPOSE_PLATFORM_PACKAGE = "androidx.compose.ui.platform."
+        const val COMPOSE_VIEW_INTEROP_PACKAGE = "androidx.compose.ui.viewinterop."
         const val MAX_OWNER_SEARCH_DEPTH = 4
         const val ROOT_PATH = "Root"
         val ACTION_NAMES = setOf(

@@ -11,9 +11,11 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.Toast;
+import me.ele.uetool.base.ContextAwareElementCollector;
 import me.ele.uetool.base.DimenUtil;
 import me.ele.uetool.base.Element;
 import me.ele.uetool.base.ElementCollector;
+import me.ele.uetool.base.ElementCollectorContext;
 import me.ele.uetool.base.ReflectionP;
 
 import java.lang.reflect.Field;
@@ -164,8 +166,15 @@ public class CollectViewsLayout extends View {
 
     private void createElements(View view) {
 
-        List<Element> elements = new ArrayList<>();
-        traverse(view, elements, UETool.getInstance().getElementCollectors());
+        final List<Element> elements = new ArrayList<>();
+        final List<ElementCollector> collectors = UETool.getInstance().getElementCollectors();
+        ElementCollectorContext context = new ElementCollectorContext() {
+            @Override
+            public void collectViewTree(View child, Element parentElement) {
+                traverse(child, parentElement, elements, collectors, this);
+            }
+        };
+        traverse(view, null, elements, collectors, context);
 
         //  面积从大到小排序
         Collections.sort(elements, new Comparator<Element>() {
@@ -179,14 +188,23 @@ public class CollectViewsLayout extends View {
 
     }
 
-    private void traverse(View view, List<Element> elements, List<ElementCollector> collectors) {
+    private void traverse(final View view, @Nullable Element parentElement, final List<Element> elements,
+                          final List<ElementCollector> collectors, ElementCollectorContext context) {
         if (UETool.getInstance().getFilterClasses().contains(view.getClass().getName())) return;
         if (view.getAlpha() == 0 || view.getVisibility() != View.VISIBLE) return;
         if (getResources().getString(R.string.uet_disable).equals(view.getTag())) return;
-        elements.add(new Element(view));
+        Element element = new Element(view);
+        element.setParentElement(parentElement);
+        elements.add(element);
         for (ElementCollector collector : collectors) {
             try {
-                if (collector.collect(view, elements)) {
+                boolean handled;
+                if (collector instanceof ContextAwareElementCollector) {
+                    handled = ((ContextAwareElementCollector) collector).collect(view, elements, context);
+                } else {
+                    handled = collector.collect(view, elements);
+                }
+                if (handled) {
                     return;
                 }
             } catch (Throwable throwable) {
@@ -196,7 +214,7 @@ public class CollectViewsLayout extends View {
         if (view instanceof ViewGroup) {
             ViewGroup parent = (ViewGroup) view;
             for (int i = 0; i < parent.getChildCount(); i++) {
-                traverse(parent.getChildAt(i), elements, collectors);
+                traverse(parent.getChildAt(i), element, elements, collectors, context);
             }
         }
     }
